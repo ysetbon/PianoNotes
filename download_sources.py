@@ -6,13 +6,24 @@ Downloads from sources that allow direct access.
 
 import os
 import sys
-import requests
 import zipfile
 import tarfile
 import tempfile
 import shutil
 from pathlib import Path
-from tqdm import tqdm
+
+# Optional imports
+try:
+    import requests
+    HAS_REQUESTS = True
+except ImportError:
+    HAS_REQUESTS = False
+
+try:
+    from tqdm import tqdm
+    HAS_TQDM = True
+except ImportError:
+    HAS_TQDM = False
 
 # Download URLs for various sources
 DOWNLOAD_SOURCES = {
@@ -44,16 +55,30 @@ PIANOBOOK_SAMPLES = [
 
 def download_with_progress(url: str, dest_path: str, desc: str = None):
     """Download a file with progress bar"""
+    if not HAS_REQUESTS:
+        print("Error: 'requests' module not installed. Run: pip install requests")
+        return None
+
     response = requests.get(url, stream=True)
     response.raise_for_status()
 
     total_size = int(response.headers.get('content-length', 0))
 
     with open(dest_path, 'wb') as f:
-        with tqdm(total=total_size, unit='B', unit_scale=True, desc=desc) as pbar:
+        if HAS_TQDM:
+            with tqdm(total=total_size, unit='B', unit_scale=True, desc=desc) as pbar:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+                    pbar.update(len(chunk))
+        else:
+            downloaded = 0
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
-                pbar.update(len(chunk))
+                downloaded += len(chunk)
+                if total_size:
+                    pct = (downloaded / total_size) * 100
+                    print(f"\r{desc}: {pct:.1f}% ({downloaded}/{total_size})", end='')
+            print()
 
     return dest_path
 
@@ -166,13 +191,8 @@ def main():
         print_download_links()
 
     if args.download_nsynth:
-        try:
-            from tqdm import tqdm
-        except ImportError:
-            print("Installing tqdm for progress bars...")
-            os.system(f"{sys.executable} -m pip install tqdm")
-            from tqdm import tqdm
-
+        if not HAS_TQDM:
+            print("Note: Install 'tqdm' for progress bars: pip install tqdm")
         download_nsynth(args.output)
 
 
